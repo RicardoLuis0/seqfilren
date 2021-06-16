@@ -132,7 +132,8 @@ namespace {
     
     std::string get_help_str(const std::string &prog){
         return "Usage:\n"+
-               prog+" [options] ...input files/folders\n\n"
+               prog+" [options] ...input files/folders\n"
+                    "\nif no inputs are specified, will scan current folder\n\n"
                     "Options:\n"
                     " SHORT            LONG                  DESCRIPTION\n"
                     "  -h            --help              display this help message\n"
