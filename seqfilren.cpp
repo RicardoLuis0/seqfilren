@@ -121,7 +121,7 @@ namespace {
     
     std::string get_help_str(const std::string &prog){
         return "Usage:\n"+
-               prog+" [options]\n\n"
+               prog+" [options] ...input files/folders\n\n"
                     "Options:\n"
                     " SHORT            LONG                  DESCRIPTION\n"
                     "  -h            --help              display this help message\n"
@@ -137,8 +137,15 @@ namespace {
     }
 }
 
+struct hash_path {
+    size_t operator()(const std::fs::path &p) const{
+        return std::fs::hash_value(p);
+    }
+};
+
 int main(int argc,char ** argv){
     out_folder=std::fs::current_path();
+    std::unordered_set<std::fs::path,hash_path> files;
     if(argc>1){
         std::vector<std::string> args;
         std::unordered_set<std::string> unknown_args;
@@ -176,6 +183,8 @@ int main(int argc,char ** argv){
                 start_output_index=0;
             }else if(arg.size()>0&&arg[0]=='-'){
                 unknown_args.emplace(arg);
+            }else{
+                files.emplace(arg);
             }
         }
         if(unknown_args.size()>0){
@@ -201,7 +210,13 @@ int main(int argc,char ** argv){
         }
     }
     std::vector<std::pair<std::fs::path,std::fs::path>> ops;
-    gen_ops(std::fs::current_path(),ops);
+    if(files.size()>0){
+        std::cerr<<"Specifying input is unimplemented";
+        return 1;
+    }else{
+        gen_ops(std::fs::current_path(),ops);
+    }
+    
     if(!test_only&&!no_prompt&&ops.size()>0){
         std::string msg=std::string("This operation will ")+(do_copy?"create ":(std::fs::current_path()==out_folder?"rename ":"move "))+std::to_string(ops.size())+(ops.size()>1?" files":" file")+". Continue (Yes/No) ? ";
         while(true){
