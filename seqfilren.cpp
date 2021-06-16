@@ -12,6 +12,7 @@ namespace std {
 }
 
 namespace {
+    
     size_t start_output_index=1;
     std::unordered_map<std::string,std::vector<std::fs::path>> ext_files;
     std::unordered_map<std::string,size_t> ext_indexes;
@@ -117,13 +118,30 @@ namespace {
     bool starts_with(const std::string &s,const std::string &what){
         return s.rfind(what,0)==0;
     }
+    
+    std::string get_help_str(const std::string &prog){
+        return "Usage:\n"+
+               prog+" [options]\n\n"
+                    "Options:\n"
+                    " SHORT            LONG                  DESCRIPTION\n"
+                    "  -h            --help              display this help message\n"
+                    "  -s            --same_index        use the same index for files with different extensions\n"
+                    "  -r            --recursive         scan subfolders recursively\n"
+                    "  -t            --test              don't perform any operations, only display actions that would have been taken\n"
+                    "  -c            --copy              don't rename/move files, copy them instead\n"
+                    "  -y            --yes               don't prompt for confirmation\n"
+                    "  -p=[prefix]   --prefix=[prefix]   output file prefix\n"
+                    "  -o=[prefix]   --output=[prefix]   output folder\n"
+                    "  -e=[ext]      --extension=[ext]   extension to search for, may be defined multiple times, if not defined, will search all files in folder, leading dot not required, but supported\n"
+                    "  -z            --zero_index        start file index at zero instead of one\n";
+    }
 }
 
 int main(int argc,char ** argv){
     out_folder=std::fs::current_path();
     if(argc>1){
         std::vector<std::string> args;
-        std::vector<std::string> unknown_args;
+        std::unordered_set<std::string> unknown_args;
         bool print_help=false;
         args.reserve(argc-1);
         for(int i=1;i<argc;i++){
@@ -157,40 +175,28 @@ int main(int argc,char ** argv){
             }else if(arg=="-z"||arg=="--zero_index"){
                 start_output_index=0;
             }else if(arg.size()>0&&arg[0]=='-'){
-                unknown_args.emplace_back(arg);
+                unknown_args.emplace(arg);
             }
         }
         if(unknown_args.size()>0){
             if(unknown_args.size()==1){
-                std::cerr<<"Unkown Argument: "<<unknown_args[0]<<"\n";
+                std::cerr<<"Unkown Argument: "<<*unknown_args.begin()<<"\n";
             }else{
-                std::cerr<<"Unknown Arguments: ";
+                std::cerr<<"Unknown Arguments:\n";
                 bool first=true;
                 for(auto &arg:unknown_args){
                     if(!first){
-                        std::cerr<<", ";
+                        std::cerr<<"\n";
                     }
-                    std::cerr<<arg;
+                    std::cerr<<"  "<<arg;
                     first=false;
                 }
                 std::cerr<<"\n";
             }
+            std::cerr<<"\n"<<get_help_str(argv[0]);
             return 1;
         }else if(print_help){
-            std::cout<<"-- Sequential file renamer --\nUsage:\n"
-                     <<argv[0]<<" [options]\n\n"
-                     <<"Options:\n"
-                     <<" SHORT            LONG                  DESCRIPTION\n"
-                     <<"  -h            --help              display this help message\n"
-                     <<"  -s            --same_index        use the same index for files with different extensions\n"
-                     <<"  -r            --recursive         scan subfolders recursively\n"
-                     <<"  -t            --test              don't perform any operations, only display actions that would have been taken\n"
-                     <<"  -c            --copy              don't rename/move files, copy them instead\n"
-                     <<"  -y            --yes               don't prompt for confirmation\n"
-                     <<"  -p=[prefix]   --prefix=[prefix]   output file prefix\n"
-                     <<"  -o=[prefix]   --output=[prefix]   output folder\n"
-                     <<"  -e=[ext]      --extension=[ext]   extension to search for, may be defined multiple times, if not defined, will search all files in folder, leading dot not required, but supported\n"
-                     <<"  -z            --zero_index        start file index at zero instead of one\n";
+            std::cout<<"-- Sequential file renamer --\n"<<get_help_str(argv[0]);
             return 0;
         }
     }
