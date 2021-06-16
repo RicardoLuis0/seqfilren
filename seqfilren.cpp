@@ -100,19 +100,30 @@ namespace {
     }
     
     void gen_ops(const std::filesystem::path &root,std::vector<std::pair<std::fs::path,std::fs::path>> &ops){
-        for(const auto &e:std::fs::directory_iterator(root)){
-            if(e.is_regular_file()){
-                add_file(e.path());
-            }else if(recursive&&e.is_directory()){
-                gen_ops(e.path(),ops);
+        if(std::fs::exists(root)){
+            if(std::fs::is_directory(root)){
+                for(const auto &e:std::fs::directory_iterator(root)){
+                    if(e.is_regular_file()){
+                        add_file(e.path());
+                    }else if(recursive&&e.is_directory()){
+                        gen_ops(e.path(),ops);
+                    }
+                }
+            }else if(std::fs::is_regular_file(root)){
+                add_file(root);
+            }else{
+                goto fail;
             }
-        }
-        for(auto &ext_filv:ext_files){
-            ops.reserve(ops.size()+ext_filv.second.size());
-            for(auto &fil:ext_filv.second){
-                ops.emplace_back(fil,out_folder/(prefix+std::to_string(ext_index(ext_filv.first))+ext_filv.first));
+            for(auto &ext_filv:ext_files){
+                ops.reserve(ops.size()+ext_filv.second.size());
+                for(auto &fil:ext_filv.second){
+                    ops.emplace_back(fil,out_folder/(prefix+std::to_string(ext_index(ext_filv.first))+ext_filv.first));
+                }
             }
+            return;
         }
+    fail:
+        throw std::runtime_error(root.string()+" is not a valid file/folder");
     }
     
     bool starts_with(const std::string &s,const std::string &what){
@@ -143,7 +154,7 @@ struct hash_path {
     }
 };
 
-int main(int argc,char ** argv){
+int main(int argc,char ** argv) try {
     out_folder=std::fs::current_path();
     std::unordered_set<std::fs::path,hash_path> files;
     if(argc>1){
@@ -211,8 +222,9 @@ int main(int argc,char ** argv){
     }
     std::vector<std::pair<std::fs::path,std::fs::path>> ops;
     if(files.size()>0){
-        std::cerr<<"Specifying input is unimplemented";
-        return 1;
+        for(auto &f:files){
+            gen_ops(f,ops);
+        }
     }else{
         gen_ops(std::fs::current_path(),ops);
     }
@@ -236,4 +248,7 @@ int main(int argc,char ** argv){
         execute_op(op);
     }
     return 0;
+} catch (std::exception &e){
+    std::cerr<<"Unexpected Error: "<<e.what()<<"\n";
+    return 1;
 }
