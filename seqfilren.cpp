@@ -84,22 +84,34 @@ namespace {
         }
     }
     
-    void execute(const std::fs::path &from,const std::fs::path &to){
+    void execute(const std::fs::path &from,const std::fs::path &to,bool overwrite){
         std::cout<<std::fs::relative(from)<<" -> "<<std::fs::relative(to)<<"\n";
         if(!test_only){
+            bool do_overwrite=false;
+            if(std::fs::exists(to)){
+                if(overwrite){
+                    do_overwrite=true;
+                }else{
+                    std::cerr<<std::fs::relative(to)<<" skipped, target file already exists\n";
+                    return;
+                }
+            }
             if(do_copy){
-                std::fs::copy(from,to);
+                std::fs::copy(from,to,do_overwrite?std::fs::copy_options::overwrite_existing:std::fs::copy_options::none);
             }else{
+                if(do_overwrite){
+                    std::fs::remove(to);
+                }
                 std::fs::rename(from,to);
             }
         }
     }
     
-    void execute_op(const std::pair<std::fs::path,std::fs::path> &op){
-        execute(op.first,op.second);
+    void execute_op(const std::tuple<std::fs::path,std::fs::path,bool> &op){
+        execute(std::get<0>(op),std::get<1>(op),std::get<2>(op));
     }
     
-    void gen_ops(const std::filesystem::path &root,std::vector<std::pair<std::fs::path,std::fs::path>> &ops){
+    bool gen_ops(const std::filesystem::path &root,std::vector<std::tuple<std::fs::path,std::fs::path,bool>> &ops){
         if(std::fs::exists(root)){
             if(std::fs::is_directory(root)){
                 for(const auto &e:std::fs::directory_iterator(root)){
@@ -117,11 +129,47 @@ namespace {
             for(auto &ext_filv:ext_files){
                 ops.reserve(ops.size()+ext_filv.second.size());
                 for(auto &fil:ext_filv.second){
-                    ops.emplace_back(fil,out_folder/(prefix+std::to_string(ext_index(ext_filv.first))+ext_filv.first));
+                    bool overwrite=false;
+                    std::fs::path outfil;
+                    while(true){
+                        outfil=out_folder/(prefix+std::to_string(ext_index(ext_filv.first))+ext_filv.first);
+                        if(!std::fs::exists(outfil)){
+                            break;
+                        }else{
+                            if(no_prompt){
+                                continue;
+                            }else{
+                                while(true){
+                                    std::cout<<std::fs::relative(outfil)<<" already exists, (S)kip, "<<(std::fs::is_regular_file(outfil)?"(O)verwrite, ":"")<<"(R)ename or (C)ancel?";
+                                    std::string in;
+                                    std::getline(std::cin,in);
+                                    if(in=="skip"||in=="Skip"||in=="s"||in=="S"){
+                                        goto continue_outer_loop;
+                                    }else if(in=="overwrite"||in=="Overwrite"||in=="o"||in=="O"){
+                                        if(std::fs::is_regular_file(outfil)){
+                                            overwrite=true;
+                                            goto end_inner_loop;
+                                        }else{
+                                            std::cout<<std::fs::relative(outfil)<<" is not a file, cannot overwrite\n";
+                                        }
+                                    }else if(in=="cancel"||in=="Cancel"||in=="c"||in=="C"){
+                                        return false;
+                                    }else if(in=="rename"||in=="Rename"||in=="r"||in=="R"){
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    end_inner_loop:
+                        break;
+                    }
+                    ops.emplace_back(fil,outfil,overwrite);
                 }
+            continue_outer_loop:;
             }
-            return;
         }
+        return true;
     fail:
         throw std::runtime_error(root.string()+" is not a valid file/folder");
     }
@@ -221,17 +269,23 @@ int main(int argc,char ** argv) try {
             return 0;
         }
     }
-    std::vector<std::pair<std::fs::path,std::fs::path>> ops;
+    std::vector<std::tuple<std::fs::path,std::fs::path,bool>> ops;
     if(files.size()>0){
         for(auto &f:files){
-            gen_ops(f,ops);
+            if(!gen_ops(f,ops)){
+                std::cout<<"Operation Cancelled.\n";
+                return 0;
+            }
         }
     }else{
-        gen_ops(std::fs::current_path(),ops);
+        if(!gen_ops(std::fs::current_path(),ops)){
+            std::cout<<"Operation Cancelled.\n";
+            return 0;
+        }
     }
     
     if(!test_only&&!no_prompt&&ops.size()>0){
-        std::string msg=std::string("This operation will ")+(do_copy?"create ":(std::fs::current_path()==out_folder?"rename ":"move "))+std::to_string(ops.size())+(ops.size()>1?" files":" file")+". Continue (Yes/No) ? ";
+        std::string msg=std::string("This operation will ")+(do_copy?"create ":(std::fs::current_path()==out_folder?"rename ":"move "))+std::to_string(ops.size())+(ops.size()>1?" files":" file")+". Continue (Yes/No) or (L)ist operations? ";
         while(true){
             std::cout<<msg;
             std::string in;
@@ -241,10 +295,16 @@ int main(int argc,char ** argv) try {
                 break;
             }else if(in=="no"||in=="No"||in=="n"||in=="N"){
                 return 1;
+            }else if(in=="list"||in=="List"||in=="l"||in=="L"){
+                for(auto &op:ops){
+                    std::cout<<std::fs::relative(std::get<0>(op))<<" -> "<<std::fs::relative(std::get<1>(op))<<"\n";
+                }
             }
         }
     }
-    std::fs::create_directories(out_folder);
+    if(!test_only){
+        std::fs::create_directories(out_folder);
+    }
     for(auto &op:ops){
         execute_op(op);
     }
