@@ -6,6 +6,7 @@
 #include <array>
 #include <string>
 #include <iostream>
+#include <regex>
 
 namespace std {
     namespace fs=filesystem;
@@ -25,6 +26,13 @@ namespace {
     bool do_copy=false;
     bool recursive=false;
     bool no_prompt=false;
+    bool use_regex=false;
+    bool regex_use_path=false;
+    bool regex_use_ext=false;
+    
+    std::string regex_str;
+    
+    std::regex regex;
     
     std::fs::path out_folder;
     
@@ -115,6 +123,18 @@ namespace {
         if(std::fs::exists(root)){
             if(std::fs::is_directory(root)){
                 for(const auto &e:std::fs::directory_iterator(root)){
+                    if(use_regex){
+                        std::string search_str=(regex_use_path&&regex_use_ext)?
+                                                    std::fs::relative(e).string():
+                                                regex_use_path?
+                                                    std::fs::relative(e).replace_extension().string():
+                                                regex_use_ext?
+                                                    std::fs::relative(e).filename().string():
+                                                    std::fs::relative(e).replace_extension().filename().string();
+                        if(!std::regex_search(search_str,regex)){
+                            continue;
+                        }
+                    }
                     if(e.is_regular_file()){
                         add_file(e.path());
                     }else if(recursive&&e.is_directory()){
@@ -191,8 +211,11 @@ namespace {
                     "  -c            --copy              don't rename/move files, copy them instead\n"
                     "  -y            --yes               don't prompt for confirmation\n"
                     "  -p=[prefix]   --prefix=[prefix]   output file prefix\n"
-                    "  -o=[prefix]   --output=[prefix]   output folder\n"
+                    "  -o=[folder]   --output=[folder]   output folder\n"
                     "  -e=[ext]      --extension=[ext]   extension to search for, may be defined multiple times, if not defined, will search all files in folder, leading dot not required, but supported\n"
+                    "  -m=[rxp]      --match_regex=[rxp] require files to match regular expression\n"
+                    "                --match_regex_ext   include extension in regex match string\n"
+                    "                --match_regex_path  include relative path to current folder in regex match string\n"
                     "  -z            --zero_index        start file index at zero instead of one\n";
     }
 }
@@ -241,6 +264,16 @@ int main(int argc,char ** argv) try {
                 out_folder=std::fs::current_path()/trim(arg.substr(9));
             }else if(arg=="-z"||arg=="--zero_index"){
                 start_output_index=0;
+            }else if(starts_with(arg,"-m=")){
+                regex_str=trim(arg.substr(3));
+                use_regex=true;
+            }else if(starts_with(arg,"--match_regex=")){
+                regex_str=trim(arg.substr(14));
+                use_regex=true;
+            }else if(arg=="--match_regex_ext"){
+                regex_use_ext=true;
+            }else if(arg=="--match_regex_path"){
+                regex_use_path=true;
             }else if(arg.size()>0&&arg[0]=='-'){
                 unknown_args.emplace(arg);
             }else{
@@ -268,6 +301,9 @@ int main(int argc,char ** argv) try {
             std::cout<<"-- Sequential file renamer --\n"<<get_help_str(argv[0]);
             return 0;
         }
+    }
+    if(use_regex){
+        regex=std::regex(regex_str);
     }
     std::vector<std::tuple<std::fs::path,std::fs::path,bool>> ops;
     if(files.size()>0){
