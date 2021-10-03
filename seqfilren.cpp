@@ -216,7 +216,8 @@ namespace {
                     "  -m=[rxp]      --match_regex=[rxp] require files to match regular expression\n"
                     "                --match_regex_ext   include extension in regex match string\n"
                     "                --match_regex_path  include relative path to current folder in regex match string\n"
-                    "  -z            --zero_index        start file index at zero instead of one\n";
+                    "  -z            --zero_index        start file index at zero instead of one, same as -i=0\n"
+                    "  -i=[int]      --start_index=[int] specify exact starting file index\n";
     }
 }
 
@@ -232,6 +233,7 @@ int main(int argc,char ** argv) try {
     if(argc>1){
         std::vector<std::string> args;
         std::unordered_set<std::string> unknown_args;
+        std::vector<std::string> errors;
         bool print_help=false;
         args.reserve(argc-1);
         for(int i=1;i<argc;i++){
@@ -274,26 +276,57 @@ int main(int argc,char ** argv) try {
                 regex_use_ext=true;
             }else if(arg=="--match_regex_path"){
                 regex_use_path=true;
+            }else if(starts_with(arg,"-i=")||starts_with(arg,"--start_index=")){
+                std::string istr=trim(arg.substr(arg[1]=='-'?14:3));
+                try {
+                    if constexpr(sizeof(unsigned long)==sizeof(size_t)){
+                        start_output_index=std::stoul(istr);
+                    }else{
+                        start_output_index=std::stoull(istr);
+                    }
+                }catch(std::invalid_argument &e){
+                    errors.push_back("Index number '"+istr+"' is not a valid number");
+                }catch(std::out_of_range &e){
+                    errors.push_back("Index '"+istr+"' out of range");
+                }
             }else if(arg.size()>0&&arg[0]=='-'){
                 unknown_args.emplace(arg);
             }else{
                 files.emplace(arg);
             }
         }
-        if(unknown_args.size()>0){
-            if(unknown_args.size()==1){
-                std::cerr<<"Unkown Argument: "<<*unknown_args.begin()<<"\n";
-            }else{
-                std::cerr<<"Unknown Arguments:\n";
-                bool first=true;
-                for(auto &arg:unknown_args){
-                    if(!first){
-                        std::cerr<<"\n";
+        if(unknown_args.size()>0||errors.size()>0){
+            if(unknown_args.size()>0){
+                if(unknown_args.size()==1){
+                    std::cerr<<"Unkown Argument: "<<*unknown_args.begin()<<"\n";
+                }else{
+                    std::cerr<<"Unknown Arguments:\n";
+                    bool first=true;
+                    for(auto &arg:unknown_args){
+                        if(!first){
+                            std::cerr<<"\n";
+                        }
+                        std::cerr<<"  "<<arg;
+                        first=false;
                     }
-                    std::cerr<<"  "<<arg;
-                    first=false;
+                    std::cerr<<"\n";
                 }
-                std::cerr<<"\n";
+            }
+            if(errors.size()>0){
+                if(errors.size()==1){
+                    std::cerr<<"Error: "<<*errors.begin()<<"\n";
+                }else{
+                    std::cerr<<"Error:\n";
+                    bool first=true;
+                    for(auto &error:errors){
+                        if(!first){
+                            std::cerr<<"\n";
+                        }
+                        std::cerr<<"  "<<error;
+                        first=false;
+                    }
+                    std::cerr<<"\n";
+                }
             }
             std::cerr<<"\n"<<get_help_str(argv[0]);
             return 1;
