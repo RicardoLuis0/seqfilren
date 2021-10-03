@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <regex>
+#include <variant>
 
 namespace std {
     namespace fs=filesystem;
@@ -194,10 +195,6 @@ namespace {
         throw std::runtime_error(root.string()+" is not a valid file/folder");
     }
     
-    bool starts_with(const std::string &s,const std::string &what){
-        return s.rfind(what,0)==0;
-    }
-    
     std::string get_help_str(const std::string &prog){
         return "Usage:\n"+
                prog+" [options] ...input files/folders\n"
@@ -227,75 +224,220 @@ struct hash_path {
     }
 };
 
+void act_help();
+void act_same_index();
+void act_recursive();
+void act_test();
+void act_copy();
+void act_yes();
+void act_prefix(std::string);
+void act_output(std::string);
+void act_extension(std::string);
+void act_match_regex(std::string);
+void act_match_regex_ext();
+void act_match_regex_path();
+void act_zero_index();
+void act_start_index(std::string);
+
+using arg_t=std::variant<void(*)(),void(*)(std::string)>;
+
+const std::map<char,arg_t> arg_actions_short {
+    {'h',act_help},
+    {'s',act_same_index},
+    {'r',act_recursive},
+    {'t',act_test},
+    {'c',act_copy},
+    {'y',act_yes},
+    {'p',act_prefix},
+    {'o',act_output},
+    {'e',act_extension},
+    {'m',act_match_regex},
+    {'z',act_zero_index},
+    {'i',act_start_index},
+};
+
+const std::map<std::string,arg_t> arg_actions_long {
+    {"help",act_help},
+    {"same_index",act_same_index},
+    {"recursive",act_recursive},
+    {"test",act_test},
+    {"copy",act_copy},
+    {"yes",act_yes},
+    {"prefix",act_prefix},
+    {"output",act_output},
+    {"extension",act_extension},
+    {"match_regex",act_match_regex},
+    {"zero_index",act_zero_index},
+    {"start_index",act_start_index},
+    //long only
+    {"match_regex_ext",act_match_regex_ext},
+    {"match_regex_path",act_match_regex_path},
+};
+
+bool arg_print_help;
+std::vector<std::string> arg_errors;
+
+void act_help(){
+    arg_print_help=true;
+}
+
+void act_same_index(){
+    same_index=true;
+}
+
+void act_recursive(){
+    recursive=true;
+}
+
+void act_test(){
+    test_only=true;
+}
+
+void act_copy(){
+    do_copy=true;
+}
+
+void act_yes(){
+    no_prompt=true;
+}
+
+void act_prefix(std::string p){
+    prefix=p;
+}
+
+void act_output(std::string o){
+    out_folder=std::fs::current_path()/o;
+}
+
+void act_extension(std::string e){
+    add_allowed_ext(e);
+}
+
+void act_match_regex(std::string s){
+    regex_str=s;
+    use_regex=true;
+}
+
+void act_match_regex_ext(){
+    regex_use_ext=true;
+}
+
+void act_match_regex_path(){
+    regex_use_path=true;
+}
+
+void act_zero_index(){
+    start_output_index=0;
+}
+
+void act_start_index(std::string istr){
+    try {
+        if constexpr(sizeof(unsigned long)==sizeof(size_t)){
+            start_output_index=std::stoul(istr);
+        }else{
+            start_output_index=std::stoull(istr);
+        }
+    }catch(std::invalid_argument &e){
+        arg_errors.push_back("Index number '"+istr+"' is not a valid number");
+    }catch(std::out_of_range &e){
+        arg_errors.push_back("Index '"+istr+"' out of range");
+    }
+}
+
 int main(int argc,char ** argv) try {
     out_folder=std::fs::current_path();
     std::unordered_set<std::fs::path,hash_path> files;
     if(argc>1){
         std::vector<std::string> args;
         std::unordered_set<std::string> unknown_args;
-        std::vector<std::string> errors;
-        bool print_help=false;
         args.reserve(argc-1);
         for(int i=1;i<argc;i++){
-            args.emplace_back(argv[i]);
+            args.emplace_back(trim(argv[i]));
         }
         for(const std::string &arg:args){//very rudimentary cmdline arg parsing
-            if(starts_with(arg,"-e=")){
-                add_allowed_ext(trim(arg.substr(3)));
-            }else if(starts_with(arg,"--extension=")){
-                add_allowed_ext(trim(arg.substr(12)));
-            }else if(arg=="-s"||arg=="--same_index"){
-                same_index=true;
-            }else if(arg=="-r"||arg=="--recursive"){
-                recursive=true;
-            }else if(arg=="-h"||arg=="--help"){
-                print_help=true;
-            }else if(arg=="-t"||arg=="--test"){
-                test_only=true;
-            }else if(arg=="-c"||arg=="--copy"){
-                do_copy=true;
-            }else if(arg=="-y"||arg=="--yes"){
-                no_prompt=true;
-            }else if(starts_with(arg,"-p=")){
-                prefix=trim(arg.substr(3));
-            }else if(starts_with(arg,"--prefix=")){
-                prefix=trim(arg.substr(9));
-            }else if(starts_with(arg,"-o=")){
-                out_folder=std::fs::current_path()/trim(arg.substr(3));
-            }else if(starts_with(arg,"--output=")){
-                out_folder=std::fs::current_path()/trim(arg.substr(9));
-            }else if(arg=="-z"||arg=="--zero_index"){
-                start_output_index=0;
-            }else if(starts_with(arg,"-m=")){
-                regex_str=trim(arg.substr(3));
-                use_regex=true;
-            }else if(starts_with(arg,"--match_regex=")){
-                regex_str=trim(arg.substr(14));
-                use_regex=true;
-            }else if(arg=="--match_regex_ext"){
-                regex_use_ext=true;
-            }else if(arg=="--match_regex_path"){
-                regex_use_path=true;
-            }else if(starts_with(arg,"-i=")||starts_with(arg,"--start_index=")){
-                std::string istr=trim(arg.substr(arg[1]=='-'?14:3));
-                try {
-                    if constexpr(sizeof(unsigned long)==sizeof(size_t)){
-                        start_output_index=std::stoul(istr);
+            if(arg.size()>0&&arg[0]=='-'){
+                if(arg[1]=='-'){
+                    bool has_data=false;
+                    std::string arg_name;
+                    std::string arg_data;
+                    if(size_t p=arg.find('=');p!=std::string::npos){
+                        if(p==3){
+                            arg_errors.push_back("Invalid Empty Argument");
+                            continue;
+                        }
+                        arg_name=arg.substr(2,p-2);
+                        arg_data=trim(arg.substr(p+1));
+                        has_data=true;
                     }else{
-                        start_output_index=std::stoull(istr);
+                        if(arg.size()==2){
+                            arg_errors.push_back("Invalid Empty Argument");
+                            continue;
+                        }
+                        arg_name=arg.substr(2);
                     }
-                }catch(std::invalid_argument &e){
-                    errors.push_back("Index number '"+istr+"' is not a valid number");
-                }catch(std::out_of_range &e){
-                    errors.push_back("Index '"+istr+"' out of range");
+                    
+                    if(auto match=arg_actions_long.find(arg_name);match!=arg_actions_long.end()){
+                        auto &act=match->second;
+                        if(std::holds_alternative<void(*)(std::string)>(act)==has_data){
+                            if(has_data){
+                                std::get<void(*)(std::string)>(act)(arg_data);
+                            }else{
+                                std::get<void(*)()>(act)();
+                            }
+                        }else{
+                            if(has_data){
+                                arg_errors.push_back("Passing Data for Option '--"+arg_name+"' that doesn't take it");
+                            }else{
+                                arg_errors.push_back("Missing Data for Option '--"+arg_name+"'");
+                            }
+                        }
+                    }else{
+                        unknown_args.emplace("--"+arg_name);
+                    }
+                }else{
+                    const size_t n=arg.size();
+                    if(arg.size()==1){
+                        arg_errors.push_back("Invalid Empty Argument");
+                    }
+                    for(size_t i=1;i<n;i++){
+                        char arg_name=arg[i];
+                        bool has_data=false;
+                        std::string arg_data;
+                        if((i+1)<n&&arg[i+1]=='='){
+                            has_data=true;
+                            arg_data=trim(arg.substr(i+2));
+                        }
+                        if(auto match=arg_actions_short.find(arg_name);match!=arg_actions_short.end()){
+                            auto &act=match->second;
+                            if(std::holds_alternative<void(*)(std::string)>(act)==has_data){
+                                if(has_data){
+                                    std::get<void(*)(std::string)>(act)(arg_data);
+                                    break;
+                                }else{
+                                    std::get<void(*)()>(act)();
+                                }
+                            }else{
+                                if(has_data){
+                                    arg_errors.push_back("Passing Data for Option '-"+std::string(1,arg_name)+"' that doesn't take it");
+                                    break;
+                                }else{
+                                    arg_errors.push_back("Missing Data for Option '-"+std::string(1,arg_name)+"'");
+                                }
+                            }
+                        }else{
+                            std::cout<<"for '"<<arg_name<<"' has_data: "<<has_data<<'\n';
+                            if(has_data){
+                                break;
+                            }
+                        }
+                    }
+                    
                 }
-            }else if(arg.size()>0&&arg[0]=='-'){
-                unknown_args.emplace(arg);
             }else{
                 files.emplace(arg);
             }
         }
-        if(unknown_args.size()>0||errors.size()>0){
+        if(unknown_args.size()>0||arg_errors.size()>0){
             if(unknown_args.size()>0){
                 if(unknown_args.size()==1){
                     std::cerr<<"Unkown Argument: "<<*unknown_args.begin()<<"\n";
@@ -312,13 +454,13 @@ int main(int argc,char ** argv) try {
                     std::cerr<<"\n";
                 }
             }
-            if(errors.size()>0){
-                if(errors.size()==1){
-                    std::cerr<<"Error: "<<*errors.begin()<<"\n";
+            if(arg_errors.size()>0){
+                if(arg_errors.size()==1){
+                    std::cerr<<"Error: "<<*arg_errors.begin()<<"\n";
                 }else{
                     std::cerr<<"Error:\n";
                     bool first=true;
-                    for(auto &error:errors){
+                    for(auto &error:arg_errors){
                         if(!first){
                             std::cerr<<"\n";
                         }
@@ -330,7 +472,7 @@ int main(int argc,char ** argv) try {
             }
             std::cerr<<"\n"<<get_help_str(argv[0]);
             return 1;
-        }else if(print_help){
+        }else if(arg_print_help){
             std::cout<<"-- Sequential file renamer --\n"<<get_help_str(argv[0]);
             return 0;
         }
